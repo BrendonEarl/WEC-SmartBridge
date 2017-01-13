@@ -1,31 +1,76 @@
-#define stdio.h
-#define stdlib.h
+#include <Time.h>
 
-const int PROXN = 1;    // north prox sensor
-const int PROXS = 2;    // south prox sensor
-const int MOTN = 3;     // north motor sensor
-const int MOTS = 4;     // south motor sensor
-const int MOTCONT = 5;  // motor control
+// ###################################
+//            CONSTANTS
+// ###################################
+#define LIGHTS 0      // light shift registers
+#define CS0 1         // shift register 0 chip select
+#define CS1 0         // shift register 1 chip select
+#define CS2 0         // shift register 2 chip select
+
+#define PROXTRIG 4    // proximity trigger pin
+#define PROXN 2       // north prox sensor
+#define PROXS 3       // south prox sensor
+#define MOTCONT 6     // motor control
+#define TOP 7         // top limit switch
+#define BOT 8         // bottom limit switch
+#define BUZZ 9        // buzzer input
+
+#define CLK 10        // shift register clk
+
+#define QUAKEBTN 11   // quake user button
+#define CRASHBTN 12   // crash user button
+#define ERRBTN 13     // error test button
+
+
+// ###################################
+//            TYPEDEFS
+// ###################################
+typedef enum {
+  RED,
+  ORANGE,
+  GREEN
+} LightState;
 
 typedef enum mode {
-  ERROR,
+  ERR,
   OK,
   LIFTWAIT,
   LIFTING,
   LIFTED,
   LOWERING,
-  QUAKE
+  QUAKE,
+  CRASH
 } Mode;
 
-typedef struct State {
+typedef struct {
   Mode mode;
-
-};
+  boolean prox;
+  int proxNStart;
+  int proxSStart;
+} State;
 
 State state;
 
+// ###################################
+//           INTERUPT F'NS
+// ###################################
+void proxEchoN() {
+  
+}
+
+void proxEchoS() {
+  
+}
+
+
+// ###################################
+//            HELPER F'NS
+// ###################################
 boolean shouldRaise() {
-  return true;
+  if (digitalRead(PROXS) == HIGH || digitalRead(PROXN) == HIGH)
+    return true;
+  return false;
 }
 
 boolean safeToRaise() {
@@ -33,7 +78,9 @@ boolean safeToRaise() {
 }
 
 boolean isRaised() {
-  return true;
+  if (digitalRead(TOP) == HIGH)
+    return true;
+  return false;
 }
 
 boolean shouldLower() {
@@ -45,15 +92,63 @@ boolean safeToLower() {
 }
 
 boolean isLowered() {
-  return true;
+  if (digitalRead(BOT) == HIGH)
+    return true;
+  return false;
 }
 
+void proxPulse(char dir) {
+  // Pulse proximity sensor
+  if (dir == 'N') {
+    digitalWrite(PROXN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(PROXN, HIGH);
+    delayMicroseconds(5);
+    digitalWrite(PROXN, LOW);
+    state.proxNStart = now();
+  }
+  if (dir == 'S') {
+    digitalWrite(PROXS, LOW);
+    delayMicroseconds(2);
+    digitalWrite(PROXS, HIGH);
+    delayMicroseconds(5);
+    digitalWrite(PROXS, LOW);
+    state.proxSStart = now();
+  }
+}
+
+
+// ###################################
+//               SETUP
+// ###################################
 void setup() {
+  pinMode(LIGHTS, OUTPUT);
+  pinMode(CS0, OUTPUT);
+  pinMode(CS1, OUTPUT);
+  pinMode(CS2, OUTPUT);
+  pinMode(CLK, OUTPUT);
+  pinMode(PROXN, INPUT_PULLUP);
+  pinMode(PROXS, INPUT_PULLUP);
+  pinMode(MOTCONT, OUTPUT);
+  pinMode(TOP, INPUT);
+  pinMode(BUZZ, OUTPUT);
+  pinMode(QUAKEBTN, INPUT);
+  pinMode(CRASHBTN, INPUT);
+  pinMode(ERRBTN, INPUT);
+
+  attachInterrupt(digitalPinToInterrupt(PROXN), proxEchoN, RISING);
+  attachInterrupt(digitalPinToInterrupt(PROXS), proxEchoS, RISING);
+  
   state.mode = OK;
 }
 
+// ###################################
+//           STATE MANAGEMENT
+// ###################################
 void loop() {
   switch (state.mode) {
+    case ERR:
+      break;
     case OK:
       if (shouldRaise()) state.mode = LIFTWAIT;
       break;
@@ -71,13 +166,16 @@ void loop() {
       break;
     case QUAKE:
       break;
-    case ERROR:
+    case CRASH:
       break;
     default:
       Serial.println("Fallen into default state, setting to ERROR");
-      state.mode = ERROR;
+      state.mode = ERR;
       break;
 
     // check for button pushes
+    if (digitalRead(QUAKEBTN) == HIGH) state.mode = QUAKE;
+    if (digitalRead(CRASHBTN) == HIGH) state.mode = CRASH;
+    if (digitalRead(ERRBTN) == HIGH) state.mode = ERR;
   }
 }
