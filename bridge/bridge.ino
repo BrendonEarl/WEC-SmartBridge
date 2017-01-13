@@ -1,7 +1,7 @@
 #include <Time.h>
 
 // ###################################
-//            CONSTANTS
+//                PINS
 // ###################################
 #define LIGHTS 0      // light shift registers
 #define CS0 1         // shift register 0 chip select
@@ -21,6 +21,11 @@
 #define QUAKEBTN 11   // quake user button
 #define CRASHBTN 12   // crash user button
 #define ERRBTN 13     // error test button
+
+// ###################################
+//             CONSTANTS
+// ###################################
+# define PULSETIME 50   // time for pulse to return
 
 
 // ###################################
@@ -56,11 +61,28 @@ State state;
 //           INTERUPT F'NS
 // ###################################
 void proxEchoN() {
-  
+  if (state.proxNStart != 0)
+    if (state.proxNStart - now() < PULSETIME) {
+      state.prox = true;
+      state.proxNStart = 0;
+      state.proxSStart = 0;
+    } else {
+      state.prox = false;
+      state.proxNStart = 0;
+    }
 }
 
 void proxEchoS() {
-  
+  if (state.proxSStart != 0) {
+    if (state.proxSStart - now() < PULSETIME) {
+      state.prox = true;
+      state.proxNStart = 0;
+      state.proxSStart = 0;
+    } else {
+      state.prox = false;
+      state.proxSStart = 0;
+    }
+  }
 }
 
 
