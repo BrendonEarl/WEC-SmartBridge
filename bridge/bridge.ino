@@ -1,5 +1,3 @@
-#include <Time.h>
-
 // ###################################
 //                PINS
 // ###################################
@@ -11,6 +9,7 @@
 #define PROXTRIG 4    // proximity trigger pin
 #define PROXN 2       // north prox sensor
 #define PROXS 3       // south prox sensor
+#define MOTPWM 5      // motor speed
 #define MOTCONT 6     // motor control
 #define TOP 7         // top limit switch
 #define BOT 8         // bottom limit switch
@@ -25,17 +24,40 @@
 // ###################################
 //             CONSTANTS
 // ###################################
-# define PULSETIME 50   // time for pulse to return
+#define PULSETIME 50    // time for pulse to return
+#define TEST 1          // run test routine
 
 
 // ###################################
 //            TYPEDEFS
 // ###################################
-typedef enum {
+typedef enum lightState {
   RED,
   ORANGE,
   GREEN
 } LightState;
+
+typedef struct {
+  LightState N0;
+  LightState N1;
+  LightState N2;
+  LightState N3;
+  LightState N4;
+  LightState N5;
+  LightState S0;
+  LightState S1;
+  LightState S2;
+  LightState S3;
+  LightState S4;
+  LightState S5;
+} Lights;
+
+Lights lights;
+
+typedef enum {
+  DOWN,
+  UP
+} MotorState;
 
 typedef enum mode {
   ERR,
@@ -50,6 +72,8 @@ typedef enum mode {
 
 typedef struct {
   Mode mode;
+  MotorState motordir;
+  int motorSpeed;
   boolean prox;
   int proxNStart;
   int proxSStart;
@@ -62,7 +86,7 @@ State state;
 // ###################################
 void proxEchoN() {
   if (state.proxNStart != 0)
-    if (state.proxNStart - now() < PULSETIME) {
+    if (state.proxNStart - millis() < PULSETIME) {
       state.prox = true;
       state.proxNStart = 0;
       state.proxSStart = 0;
@@ -74,7 +98,7 @@ void proxEchoN() {
 
 void proxEchoS() {
   if (state.proxSStart != 0) {
-    if (state.proxSStart - now() < PULSETIME) {
+    if (state.proxSStart - millis() < PULSETIME) {
       state.prox = true;
       state.proxNStart = 0;
       state.proxSStart = 0;
@@ -127,7 +151,7 @@ void proxPulse(char dir) {
     digitalWrite(PROXN, HIGH);
     delayMicroseconds(5);
     digitalWrite(PROXN, LOW);
-    state.proxNStart = now();
+    state.proxNStart = millis();
   }
   if (dir == 'S') {
     digitalWrite(PROXS, LOW);
@@ -135,7 +159,7 @@ void proxPulse(char dir) {
     digitalWrite(PROXS, HIGH);
     delayMicroseconds(5);
     digitalWrite(PROXS, LOW);
-    state.proxSStart = now();
+    state.proxSStart = millis();
   }
 }
 
@@ -162,12 +186,21 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(PROXS), proxEchoS, RISING);
   
   state.mode = OK;
+  state.motordir = DOWN;
+  state.motorSpeed = 0;
+  state.prox = false;
+  state.proxNStart = 0;
+  state.proxSStart = 0;
 }
 
 // ###################################
 //           STATE MANAGEMENT
 // ###################################
 void loop() {
+#ifdef TEST
+  state.mode = LIFTING;
+#endif
+#ifndef TEST
   switch (state.mode) {
     case ERR:
       break;
@@ -200,4 +233,5 @@ void loop() {
     if (digitalRead(CRASHBTN) == HIGH) state.mode = CRASH;
     if (digitalRead(ERRBTN) == HIGH) state.mode = ERR;
   }
+#endif
 }
