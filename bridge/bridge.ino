@@ -85,6 +85,7 @@ State state;
 //           INTERUPT F'NS
 // ###################################
 void proxEchoN() {
+  Serial.print("ProxN time: ");
   if (state.proxNStart != 0)
     if (state.proxNStart - millis() < PULSETIME) {
       state.prox = true;
@@ -97,6 +98,8 @@ void proxEchoN() {
 }
 
 void proxEchoS() {
+  Serial.print("ProxS time: ");
+  Serial.println(state.proxSStart - millis());
   if (state.proxSStart != 0) {
     if (state.proxSStart - millis() < PULSETIME) {
       state.prox = true;
@@ -114,7 +117,7 @@ void proxEchoS() {
 //            HELPER F'NS
 // ###################################
 boolean shouldRaise() {
-  if (digitalRead(PROXS) == HIGH || digitalRead(PROXN) == HIGH)
+  if (state.prox == true)
     return true;
   return false;
 }
@@ -168,6 +171,8 @@ void proxPulse(char dir) {
 //               SETUP
 // ###################################
 void setup() {
+  Serial.begin(9600);
+
   pinMode(LIGHTS, OUTPUT);
   pinMode(CS0, OUTPUT);
   pinMode(CS1, OUTPUT);
@@ -198,13 +203,15 @@ void setup() {
 // ###################################
 void loop() {
 #ifdef TEST
-  state.mode = LIFTING;
+  state.mode = OK;
+  shouldRaise();
 #endif
 #ifndef TEST
   switch (state.mode) {
     case ERR:
       break;
     case OK:
+      checkProx();
       if (shouldRaise()) state.mode = LIFTWAIT;
       break;
     case LIFTWAIT:
