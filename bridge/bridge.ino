@@ -6,10 +6,10 @@ const int PROXS = 2;    // south prox sensor
 const int MOTN = 3;     // north motor sensor
 const int MOTS = 4;     // south motor sensor
 
-typedev enum Bool {
+typedef enum Bool {
   FALSE,
   TRUE
-}
+};
 
 typedef enum mode {
   ERROR,
