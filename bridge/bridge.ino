@@ -1,18 +1,20 @@
+#include <Servo.h>
+
 // ###################################
 //                PINS
 // ###################################
 #define LIGHTS 0      // light shift registers
-#define CS0 1         // shift register 0 chip select
+#define CS0 0         // shift register 0 chip select
 #define CS1 0         // shift register 1 chip select
 
 #define PROXTRIG 4    // proximity trigger pin
 #define PROXN 2       // north prox sensor
 #define PROXS 0       // south prox sensor
-#define MOTPWM 5      // motor speed
-#define MOTCONT 6     // motor control
-#define TOP 7         // top limit switch
-#define BOT 8         // bottom limit switch
-#define BUZZ 9        // buzzer input
+#define MOTPWM 9      // motor speed
+#define MOTCONT 0     // motor control
+#define TOP 0         // top limit switch
+#define BOT 0         // bottom limit switch
+#define BUZZ 0        // buzzer output
 
 #define CLK 10        // shift register clk
 
@@ -26,13 +28,12 @@
 #define PULSETIME 5    // time for pulse to return
 #define TEST 1          // run test routine
 
-
 // ###################################
 //            TYPEDEFS
 // ###################################
 typedef enum lightState {
   RED,
-  ORANGE,
+  FLASH,
   GREEN
 } LightState;
 
@@ -51,8 +52,6 @@ typedef struct {
   LightState S5;
 } Lights;
 
-Lights lights;
-
 typedef enum {
   DOWN,
   UP
@@ -62,6 +61,7 @@ typedef enum mode {
   ERR,
   OK,
   LIFTWAIT,
+  LIFTSTART,
   LIFTING,
   LIFTED,
   LOWERING,
@@ -71,14 +71,19 @@ typedef enum mode {
 
 typedef struct {
   Mode mode;
-  MotorState motordir;
+  MotorState motorDir;
   int motorSpeed;
   boolean prox;
   unsigned long proxNStart;
   unsigned long proxSStart;
 } State;
 
+// ###################################
+//             GLOBALS
+// ###################################
 State state;
+Servo pully;
+Lights lights;
 
 // ###################################
 //           INTERUPT F'NS
@@ -116,7 +121,6 @@ void proxEchoS() {
   }
 }
 
-
 // ###################################
 //            HELPER F'NS
 // ###################################
@@ -150,35 +154,31 @@ boolean isLowered() {
   return false;
 }
 
-void proxPulse(char dir) {
+void proxPulse() {
   // Pulse proximity sensor
-  if (dir == 'N') {
-    digitalWrite(PROXTRIG, LOW);
-    delayMicroseconds(2);
-    digitalWrite(PROXTRIG, HIGH);
-    delayMicroseconds(5);
-    digitalWrite(PROXTRIG, LOW);
-    state.proxNStart = millis();
-  }
-  if (dir == 'S') {
-    digitalWrite(PROXS, LOW);
-    delayMicroseconds(2);
-    digitalWrite(PROXS, HIGH);
-    delayMicroseconds(5);
-    digitalWrite(PROXS, LOW);
-    state.proxSStart = millis();
-  }
+  digitalWrite(PROXTRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(PROXTRIG, HIGH);
+  delayMicroseconds(5);
+  digitalWrite(PROXTRIG, LOW);
+  state.proxNStart = millis();
+
+  digitalWrite(PROXS, LOW);
+  delayMicroseconds(2);
+  digitalWrite(PROXS, HIGH);
+  delayMicroseconds(5);
+  digitalWrite(PROXS, LOW);
+  state.proxSStart = millis();
 }
 
 void moveMotor() {
-  if (state.motorDir == UP) {
-    
-  }
-  if (state.motorDir == DOWN) {
-    
-  }
+  int motorPWM = 126;
+  if (state.motorDir == UP)
+    motorPWM = map(state.motorSpeed, 0, 100, 90, 0);
+  if (state.motorDir == DOWN)
+    motorPWM = map(state.motorSpeed, 0, 100, 90, 179);
+  pully.write(motorPWM);
 }
-
 
 // ###################################
 //               SETUP
@@ -194,75 +194,81 @@ void setup() {
   pinMode(PROXTRIG, OUTPUT);
   pinMode(PROXN, INPUT);
   pinMode(PROXS, INPUT);
-  pinMode(MOTCONT, OUTPUT);
+  pinMode(MOTPWM, OUTPUT);
   pinMode(TOP, INPUT);
   pinMode(BUZZ, OUTPUT);
   pinMode(QUAKEBTN, INPUT);
   pinMode(CRASHBTN, INPUT);
   pinMode(ERRBTN, INPUT);
 
+  pully.attach(MOTPWM);
+
   attachInterrupt(digitalPinToInterrupt(PROXN), proxEchoN, FALLING);
-//  attachInterrupt(digitalPinToInterrupt(PROXS), proxEchoS, FALLING);
-  
+  //  attachInterrupt(digitalPinToInterrupt(PROXS), proxEchoS, FALLING);
+
   state.mode = OK;
-  state.motordir = DOWN;
+  state.motorDir = DOWN;
   state.motorSpeed = 0;
   state.prox = false;
   state.proxNStart = 0;
   state.proxSStart = 0;
+
+#ifdef TEST
+  state.mode = LIFTSTART;
+#endif
 }
 
 // ###################################
 //           STATE MANAGEMENT
 // ###################################
 void loop() {
-#ifdef TEST
-  state.mode = LIFTING;
-#endif
-#ifndef TEST
   switch (state.mode) {
     case ERR:
-      state.motordir = DOWN;
+      state.motorDir = DOWN;
       state.motorSpeed = 0;
       state.prox = false;
       state.proxNStart = 0;
       state.proxSStart = 0;
       break;
     case OK:
-      state.motordir = DOWN;
+      state.motorDir = DOWN;
       state.motorSpeed = 0;
-      checkProx();
+      proxPulse();
       if (shouldRaise()) state.mode = LIFTWAIT;
       break;
     case LIFTWAIT:
-      state.motordir = UP;
+      state.motorDir = UP;
       state.motorSpeed = 0;
-      if (safeToRaise()) state.mode = LIFTING;
+      if (safeToRaise()) state.mode = LIFTSTART;
+      break;
+    case LIFTSTART:
+      state.motorDir = UP;
+      state.motorSpeed = 20;
+      moveMotor();
+      state.mode = LIFTING;
       break;
     case LIFTING:
-      state.motordir = UP;
-      state.motorSpeed = 50;
       if (isRaised()) state.mode = LIFTED;
       break;
     case LIFTED:
-      state.motordir = UP;
+      state.motorDir = UP;
       state.motorSpeed = 0;
       if (shouldLower() && safeToLower()) state.mode = LOWERING;
       break;
     case LOWERING:
-      state.motordir = DOWN;
+      state.motorDir = DOWN;
       state.motorSpeed = 50;
       if (isLowered()) state.mode = OK;
       break;
     case QUAKE:
-      state.motordir = DOWN;
+      state.motorDir = DOWN;
       state.motorSpeed = 0;
       state.prox = false;
       state.proxNStart = 0;
       state.proxSStart = 0;
       break;
     case CRASH:
-      state.motordir = DOWN;
+      state.motorDir = DOWN;
       state.motorSpeed = 0;
       state.prox = false;
       state.proxNStart = 0;
@@ -272,13 +278,10 @@ void loop() {
       Serial.println("Fallen into default state, setting to ERROR");
       state.mode = ERR;
       break;
-
-    moveMotor();
-
-    // check for button pushes
-    if (digitalRead(QUAKEBTN) == HIGH) state.mode = QUAKE;
-    if (digitalRead(CRASHBTN) == HIGH) state.mode = CRASH;
-    if (digitalRead(ERRBTN) == HIGH) state.mode = ERR;
   }
-#endif
+
+  // check for button pushes
+  if (digitalRead(QUAKEBTN) == HIGH) state.mode = QUAKE;
+  if (digitalRead(CRASHBTN) == HIGH) state.mode = CRASH;
+  if (digitalRead(ERRBTN) == HIGH) state.mode = ERR;
 }
