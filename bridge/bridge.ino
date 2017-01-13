@@ -4,11 +4,10 @@
 #define LIGHTS 0      // light shift registers
 #define CS0 1         // shift register 0 chip select
 #define CS1 0         // shift register 1 chip select
-#define CS2 0         // shift register 2 chip select
 
 #define PROXTRIG 4    // proximity trigger pin
 #define PROXN 2       // north prox sensor
-#define PROXS 3       // south prox sensor
+#define PROXS 0       // south prox sensor
 #define MOTPWM 5      // motor speed
 #define MOTCONT 6     // motor control
 #define TOP 7         // top limit switch
@@ -24,7 +23,7 @@
 // ###################################
 //             CONSTANTS
 // ###################################
-#define PULSETIME 50    // time for pulse to return
+#define PULSETIME 5    // time for pulse to return
 #define TEST 1          // run test routine
 
 
@@ -75,8 +74,8 @@ typedef struct {
   MotorState motordir;
   int motorSpeed;
   boolean prox;
-  int proxNStart;
-  int proxSStart;
+  unsigned long proxNStart;
+  unsigned long proxSStart;
 } State;
 
 State state;
@@ -85,9 +84,13 @@ State state;
 //           INTERUPT F'NS
 // ###################################
 void proxEchoN() {
-  Serial.print("ProxN time: ");
-  if (state.proxNStart != 0)
-    if (state.proxNStart - millis() < PULSETIME) {
+  if (state.proxNStart != 0) {
+    Serial.print("ProxN time: ");
+    Serial.println(millis() - state.proxNStart);
+    Serial.print(millis());
+    Serial.print(" ");
+    Serial.println(state.proxNStart);
+    if (millis() - state.proxNStart < PULSETIME) {
       state.prox = true;
       state.proxNStart = 0;
       state.proxSStart = 0;
@@ -95,13 +98,14 @@ void proxEchoN() {
       state.prox = false;
       state.proxNStart = 0;
     }
+  }
 }
 
 void proxEchoS() {
-  Serial.print("ProxS time: ");
-  Serial.println(state.proxSStart - millis());
   if (state.proxSStart != 0) {
-    if (state.proxSStart - millis() < PULSETIME) {
+    Serial.print("ProxS time: ");
+    Serial.println(millis() - state.proxSStart);
+    if (millis() - state.proxSStart < PULSETIME) {
       state.prox = true;
       state.proxNStart = 0;
       state.proxSStart = 0;
@@ -149,11 +153,11 @@ boolean isLowered() {
 void proxPulse(char dir) {
   // Pulse proximity sensor
   if (dir == 'N') {
-    digitalWrite(PROXN, LOW);
+    digitalWrite(PROXTRIG, LOW);
     delayMicroseconds(2);
-    digitalWrite(PROXN, HIGH);
+    digitalWrite(PROXTRIG, HIGH);
     delayMicroseconds(5);
-    digitalWrite(PROXN, LOW);
+    digitalWrite(PROXTRIG, LOW);
     state.proxNStart = millis();
   }
   if (dir == 'S') {
@@ -166,20 +170,30 @@ void proxPulse(char dir) {
   }
 }
 
+void moveMotor() {
+  if (state.motorDir == UP) {
+    
+  }
+  if (state.motorDir == DOWN) {
+    
+  }
+}
+
 
 // ###################################
 //               SETUP
 // ###################################
 void setup() {
   Serial.begin(9600);
+  Serial.println("Serial initialized");
 
   pinMode(LIGHTS, OUTPUT);
   pinMode(CS0, OUTPUT);
   pinMode(CS1, OUTPUT);
-  pinMode(CS2, OUTPUT);
   pinMode(CLK, OUTPUT);
-  pinMode(PROXN, INPUT_PULLUP);
-  pinMode(PROXS, INPUT_PULLUP);
+  pinMode(PROXTRIG, OUTPUT);
+  pinMode(PROXN, INPUT);
+  pinMode(PROXS, INPUT);
   pinMode(MOTCONT, OUTPUT);
   pinMode(TOP, INPUT);
   pinMode(BUZZ, OUTPUT);
@@ -187,8 +201,8 @@ void setup() {
   pinMode(CRASHBTN, INPUT);
   pinMode(ERRBTN, INPUT);
 
-  attachInterrupt(digitalPinToInterrupt(PROXN), proxEchoN, RISING);
-  attachInterrupt(digitalPinToInterrupt(PROXS), proxEchoS, RISING);
+  attachInterrupt(digitalPinToInterrupt(PROXN), proxEchoN, FALLING);
+//  attachInterrupt(digitalPinToInterrupt(PROXS), proxEchoS, FALLING);
   
   state.mode = OK;
   state.motordir = DOWN;
@@ -203,37 +217,63 @@ void setup() {
 // ###################################
 void loop() {
 #ifdef TEST
-  state.mode = OK;
-  shouldRaise();
+  state.mode = LIFTING;
 #endif
 #ifndef TEST
   switch (state.mode) {
     case ERR:
+      state.motordir = DOWN;
+      state.motorSpeed = 0;
+      state.prox = false;
+      state.proxNStart = 0;
+      state.proxSStart = 0;
       break;
     case OK:
+      state.motordir = DOWN;
+      state.motorSpeed = 0;
       checkProx();
       if (shouldRaise()) state.mode = LIFTWAIT;
       break;
     case LIFTWAIT:
+      state.motordir = UP;
+      state.motorSpeed = 0;
       if (safeToRaise()) state.mode = LIFTING;
       break;
     case LIFTING:
+      state.motordir = UP;
+      state.motorSpeed = 50;
       if (isRaised()) state.mode = LIFTED;
       break;
     case LIFTED:
+      state.motordir = UP;
+      state.motorSpeed = 0;
       if (shouldLower() && safeToLower()) state.mode = LOWERING;
       break;
     case LOWERING:
+      state.motordir = DOWN;
+      state.motorSpeed = 50;
       if (isLowered()) state.mode = OK;
       break;
     case QUAKE:
+      state.motordir = DOWN;
+      state.motorSpeed = 0;
+      state.prox = false;
+      state.proxNStart = 0;
+      state.proxSStart = 0;
       break;
     case CRASH:
+      state.motordir = DOWN;
+      state.motorSpeed = 0;
+      state.prox = false;
+      state.proxNStart = 0;
+      state.proxSStart = 0;
       break;
     default:
       Serial.println("Fallen into default state, setting to ERROR");
       state.mode = ERR;
       break;
+
+    moveMotor();
 
     // check for button pushes
     if (digitalRead(QUAKEBTN) == HIGH) state.mode = QUAKE;
