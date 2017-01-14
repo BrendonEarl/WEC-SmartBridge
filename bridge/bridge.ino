@@ -3,18 +3,18 @@
 // ###################################
 //                PINS
 // ###################################
-#define LIGHTS 0      // light shift registers
-#define CS0 0         // shift register 0 chip select
-#define CS1 0         // shift register 1 chip select
+#define LIGHTS 1      // light shift registers
+#define CS0 1         // shift register 0 chip select
+#define CS1 1         // shift register 1 chip select
 
 #define PROXTRIG 4    // proximity trigger pin
 #define PROXN 2       // north prox sensor
 #define PROXS 0       // south prox sensor
 #define MOTPWM 9      // motor speed
 #define MOTCONT 0     // motor control
-#define TOP 0         // top limit switch
-#define BOT 0         // bottom limit switch
-#define BUZZ 0        // buzzer output
+#define TOP 13         // top limit switch
+#define BOT 12         // bottom limit switch
+#define BUZZ 3        // buzzer output
 
 #define CLK 10        // shift register clk
 
@@ -25,8 +25,8 @@
 // ###################################
 //             CONSTANTS
 // ###################################
-#define PULSETIME 5    // time for pulse to return
-#define TEST 1          // run test routine
+#define PULSETIME 3   // time for pulse to return
+#define TEST 0        // run test routine
 
 // ###################################
 //            TYPEDEFS
@@ -61,7 +61,6 @@ typedef enum mode {
   ERR,
   OK,
   LIFTWAIT,
-  LIFTSTART,
   LIFTING,
   LIFTED,
   LOWERING,
@@ -76,6 +75,9 @@ typedef struct {
   boolean prox;
   unsigned long proxNStart;
   unsigned long proxSStart;
+  unsigned long lastPulse;
+  bool buzz;
+  Lights lights;
 } State;
 
 // ###################################
@@ -83,7 +85,6 @@ typedef struct {
 // ###################################
 State state;
 Servo pully;
-Lights lights;
 
 // ###################################
 //           INTERUPT F'NS
@@ -131,6 +132,7 @@ boolean shouldRaise() {
 }
 
 boolean safeToRaise() {
+  delay(10000);
   return true;
 }
 
@@ -141,10 +143,12 @@ boolean isRaised() {
 }
 
 boolean shouldLower() {
+  delay(5000);
   return true;
 }
 
 boolean safeToLower() {
+  delay(5000);
   return true;
 }
 
@@ -155,30 +159,48 @@ boolean isLowered() {
 }
 
 void proxPulse() {
-  // Pulse proximity sensor
-  digitalWrite(PROXTRIG, LOW);
-  delayMicroseconds(2);
-  digitalWrite(PROXTRIG, HIGH);
-  delayMicroseconds(5);
-  digitalWrite(PROXTRIG, LOW);
-  state.proxNStart = millis();
-
-  digitalWrite(PROXS, LOW);
-  delayMicroseconds(2);
-  digitalWrite(PROXS, HIGH);
-  delayMicroseconds(5);
-  digitalWrite(PROXS, LOW);
-  state.proxSStart = millis();
+  if (millis() - state.lastPulse > 500) {
+    state.lastPulse = millis();
+    // Pulse proximity sensor
+    digitalWrite(PROXTRIG, LOW);
+    delayMicroseconds(2);
+    digitalWrite(PROXTRIG, HIGH);
+    delayMicroseconds(5);
+    digitalWrite(PROXTRIG, LOW);
+    state.proxNStart = millis();
+  
+    digitalWrite(PROXS, LOW);
+    delayMicroseconds(2);
+    digitalWrite(PROXS, HIGH);
+    delayMicroseconds(5);
+    digitalWrite(PROXS, LOW);
+    state.proxSStart = millis();
+  }
 }
 
 void moveMotor() {
-  int motorPWM = 126;
+  int motorPWM = 2;
   if (state.motorDir == UP)
     motorPWM = map(state.motorSpeed, 0, 100, 90, 0);
   if (state.motorDir == DOWN)
     motorPWM = map(state.motorSpeed, 0, 100, 90, 179);
   pully.write(motorPWM);
 }
+
+void setBuzz() {
+  Serial.println(state.mode);
+  Serial.println(state.buzz);
+  if (state.buzz == true) {
+    if (state.mode == QUAKE)
+      analogWrite(BUZZ, 10);
+    if (state.mode == ERR)
+      analogWrite(BUZZ, 200);
+  } else {
+    analogWrite(BUZZ, 0);
+  }
+}
+
+
 
 // ###################################
 //               SETUP
@@ -204,7 +226,7 @@ void setup() {
   pully.attach(MOTPWM);
 
   attachInterrupt(digitalPinToInterrupt(PROXN), proxEchoN, FALLING);
-  //  attachInterrupt(digitalPinToInterrupt(PROXS), proxEchoS, FALLING);
+  //attachInterrupt(digitalPinToInterrupt(PROXS), proxEchoS, FALLING);
 
   state.mode = OK;
   state.motorDir = DOWN;
@@ -214,7 +236,7 @@ void setup() {
   state.proxSStart = 0;
 
 #ifdef TEST
-  state.mode = LIFTSTART;
+  state.mode = ERR;
 #endif
 }
 
@@ -229,35 +251,40 @@ void loop() {
       state.prox = false;
       state.proxNStart = 0;
       state.proxSStart = 0;
+      state.buzz = true;
+      setBuzz();
+      moveMotor();
       break;
     case OK:
       state.motorDir = DOWN;
       state.motorSpeed = 0;
+      state.buzz = false;
+      moveMotor();
+      setBuzz();
       proxPulse();
-      if (shouldRaise()) state.mode = LIFTWAIT;
+//      if (shouldRaise()) state.mode = LIFTWAIT;
       break;
     case LIFTWAIT:
       state.motorDir = UP;
       state.motorSpeed = 0;
-      if (safeToRaise()) state.mode = LIFTSTART;
-      break;
-    case LIFTSTART:
-      state.motorDir = UP;
-      state.motorSpeed = 20;
-      moveMotor();
-      state.mode = LIFTING;
+      if (safeToRaise()) state.mode = LIFTING;
       break;
     case LIFTING:
-      if (isRaised()) state.mode = LIFTED;
+    state.motorDir = UP;
+      state.motorSpeed = 100;
+      moveMotor();
+//      if (isRaised()) state.mode = LIFTED;
       break;
     case LIFTED:
       state.motorDir = UP;
       state.motorSpeed = 0;
+      moveMotor();
       if (shouldLower() && safeToLower()) state.mode = LOWERING;
       break;
     case LOWERING:
       state.motorDir = DOWN;
       state.motorSpeed = 50;
+      moveMotor();
       if (isLowered()) state.mode = OK;
       break;
     case QUAKE:
@@ -266,6 +293,8 @@ void loop() {
       state.prox = false;
       state.proxNStart = 0;
       state.proxSStart = 0;
+      state.buzz = true;
+      setBuzz();
       break;
     case CRASH:
       state.motorDir = DOWN;
@@ -280,8 +309,10 @@ void loop() {
       break;
   }
 
+  
+
   // check for button pushes
-  if (digitalRead(QUAKEBTN) == HIGH) state.mode = QUAKE;
-  if (digitalRead(CRASHBTN) == HIGH) state.mode = CRASH;
-  if (digitalRead(ERRBTN) == HIGH) state.mode = ERR;
+//  if (digitalRead(QUAKEBTN) == HIGH) state.mode = QUAKE;
+//  if (digitalRead(CRASHBTN) == HIGH) state.mode = CRASH;
+//  if (digitalRead(ERRBTN) == HIGH) state.mode = ERR;
 }
